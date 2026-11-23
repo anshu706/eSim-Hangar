@@ -17,9 +17,11 @@ except ImportError:
 
 from esim_tool_manager import __version__
 from esim_tool_manager.config import ConfigManager
+from esim_tool_manager.configurator import ToolConfigurator
 from esim_tool_manager.deps import DependencyChecker
 from esim_tool_manager.detector import ToolDetector
 from esim_tool_manager.errors import (
+    ConfigError,
     EsimToolManagerError,
     PlatformError,
 )
@@ -337,6 +339,107 @@ def cmd_rollback(args: argparse.Namespace, updater: ToolUpdater) -> int:
         return 1
 
 
+def cmd_configure(args: argparse.Namespace, configurator: ToolConfigurator) -> int:
+    """Configure HKCU user PATH entries and eSim configuration file with diffs and revert."""
+    if args.revert:
+        try:
+            preview = configurator.preview_revert()
+        except ConfigError as exc:
+            print_error(exc.message, fix_suggestion=exc.fix_suggestion)
+            return 1
+
+        print_info("Configuration Revert Preview:")
+        to_remove = preview.get("added_entries_to_remove", [])
+        if to_remove:
+            print_warning(f"PATH entries to be removed ({len(to_remove)}):")
+            for entry in to_remove:
+                print(f"  [-] {entry}")
+        else:
+            print_info("No PATH entries need to be removed.")
+
+        cfg_diff = preview.get("cfg_diff", "")
+        if cfg_diff:
+            print_info(f"Diff for {preview['esim_config_path']}:")
+            for line in cfg_diff.splitlines():
+                if line.startswith("+"):
+                    if HAVE_RICH and console:
+                        console.print(f"[green]{line}[/green]")
+                    else:
+                        print(line)
+                elif line.startswith("-"):
+                    if HAVE_RICH and console:
+                        console.print(f"[red]{line}[/red]")
+                    else:
+                        print(line)
+                else:
+                    print(line)
+
+        if not args.yes and not args.dry_run:
+            try:
+                choice = input("Proceed with configuration revert? [y/N]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt, OSError):
+                print_warning("\nRevert cancelled by user.")
+                return 3
+            if choice not in ("y", "yes"):
+                print_warning("Revert cancelled by user.")
+                return 3
+
+        ok, msg = configurator.apply_revert(dry_run=args.dry_run)
+        if ok:
+            print_success(msg)
+            return 0
+        print_error(msg)
+        return 1
+
+    # Standard configuration
+    preview = configurator.preview_configure()
+    added_paths = preview.get("added_path_entries", [])
+    if added_paths:
+        print_info(f"New entries to append to HKCU user PATH ({len(added_paths)}):")
+        for p in added_paths:
+            print(f"  [+] {p}")
+    else:
+        print_info("All managed tool directories are already present in user PATH.")
+
+    cfg_diff = preview.get("cfg_diff", "")
+    target_cfg = preview.get("target_esim_cfg", "")
+    print_info(f"Target eSim configuration file: {target_cfg}")
+    if cfg_diff:
+        print_info("Configuration File Changes (Diff):")
+        for line in cfg_diff.splitlines():
+            if line.startswith("+"):
+                if HAVE_RICH and console:
+                    console.print(f"[green]{line}[/green]")
+                else:
+                    print(line)
+            elif line.startswith("-"):
+                if HAVE_RICH and console:
+                    console.print(f"[red]{line}[/red]")
+                else:
+                    print(line)
+            else:
+                print(line)
+    else:
+        print_info("eSim configuration file is already up to date.")
+
+    if not args.yes and not args.dry_run:
+        try:
+            choice = input("Apply these configuration changes? [y/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt, OSError):
+            print_warning("\nConfiguration cancelled by user.")
+            return 3
+        if choice not in ("y", "yes"):
+            print_warning("Configuration cancelled by user.")
+            return 3
+
+    ok, msg = configurator.apply_configure(dry_run=args.dry_run)
+    if ok:
+        print_success(msg)
+        return 0
+    print_error(msg)
+    return 1
+
+
 def cmd_config(args: argparse.Namespace, config_mgr: ConfigManager) -> int:
     """Get or set user configuration values."""
     if args.config_action == "get":
@@ -537,6 +640,11 @@ def main(argv: list[str] | None = None) -> int:
             installer=installer,
             config_mgr=config_mgr,
         )
+        configurator = ToolConfigurator(
+            registry=registry,
+            detector=detector,
+            config_mgr=config_mgr,
+        )
 
         if args.command == "init":
             return cmd_init(args, config_mgr)
@@ -550,6 +658,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_update(args, updater, config_mgr)
         elif args.command == "rollback":
             return cmd_rollback(args, updater)
+        elif args.command == "configure":
+            return cmd_configure(args, configurator)
         elif args.command == "config":
             return cmd_config(args, config_mgr)
         else:
