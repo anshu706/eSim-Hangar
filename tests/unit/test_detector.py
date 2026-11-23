@@ -62,8 +62,8 @@ def test_detect_tool_incompatible(
         # min is 34.0. Version 26.0 is below min
         patch.object(detector, "query_tool_version", return_value="26.0"),
     ):
-            spec = mock_registry.get_tool("ngspice")
-            status = detector.detect_tool(spec)
-            assert status.status == "INCOMPATIBLE"
-            assert status.installed_version == "26.0"
-            assert "below minimum requirement" in (status.fix_suggestion or "")
+        spec = mock_registry.get_tool("ngspice")
+        status = detector.detect_tool(spec)
+        assert status.status == "INCOMPATIBLE"
+        assert status.installed_version == "26.0"
+        assert "below minimum requirement" in (status.fix_suggestion or "")

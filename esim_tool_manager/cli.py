@@ -23,6 +23,7 @@ from esim_tool_manager.errors import (
     EsimToolManagerError,
     PlatformError,
 )
+from esim_tool_manager.installer import ToolInstaller
 from esim_tool_manager.logger import log_action, setup_logger
 from esim_tool_manager.platform_win import check_git_installed, check_winget_installed
 from esim_tool_manager.registry import ToolRegistry
@@ -188,6 +189,49 @@ def cmd_check(
     return 0
 
 
+def cmd_install(args: argparse.Namespace, installer: ToolInstaller) -> int:
+    """Install a specific tool or all tools."""
+    target = args.tool.lower().strip()
+
+    # Prompt confirmation unless --yes or --dry-run
+    if not args.yes and not args.dry_run:
+        prompt_target = "all managed tools" if target == "all" else target
+        print_info(f"Preparing to install: {prompt_target}")
+        try:
+            choice = input("Proceed with installation? [y/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt, OSError):
+            print_warning("\nInstallation cancelled by user or running in non-interactive environment.")
+            log_action("install", tool=target, action="cancel", result="CANCELLED")
+            return 3
+        if choice not in ("y", "yes"):
+            print_warning("Installation cancelled by user.")
+            log_action("install", tool=target, action="cancel", result="CANCELLED")
+            return 3
+
+    if target == "all":
+        print_info("Installing all tools in dependency sequence...")
+        results = installer.install_all(dry_run=args.dry_run)
+        has_error = False
+        for t_name, (ok, msg) in results.items():
+            if ok:
+                print_success(f"{t_name}: {msg}")
+            else:
+                has_error = True
+                print_error(f"{t_name}: {msg}")
+        return 1 if has_error else 0
+
+    try:
+        ok, msg = installer.install_tool(target, dry_run=args.dry_run)
+        if ok:
+            print_success(msg)
+            return 0
+        print_error(msg)
+        return 1
+    except EsimToolManagerError as exc:
+        print_error(exc.message, fix_suggestion=exc.fix_suggestion)
+        return 1
+
+
 def cmd_config(args: argparse.Namespace, config_mgr: ConfigManager) -> int:
     """Get or set user configuration values."""
     if args.config_action == "get":
@@ -212,6 +256,27 @@ def cmd_config(args: argparse.Namespace, config_mgr: ConfigManager) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser with all subcommands."""
+    common_parser = argparse.ArgumentParser(add_help=False)
+    common_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Simulate actions without applying system changes",
+    )
+    common_parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Enable verbose execution output",
+    )
+    common_parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Display full tracebacks upon failure",
+    )
+
     parser = argparse.ArgumentParser(
         prog="esim-tool-manager",
         description="Automated External Tool Manager for FOSSEE eSim (EDA)",
@@ -219,63 +284,67 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
-        "--dry-run", action="store_true", help="Simulate actions without applying system changes"
+        "--dry-run", action="store_true", default=False, help="Simulate actions without applying system changes"
     )
     parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Enable verbose execution output"
+        "--verbose", "-v", action="store_true", default=False, help="Enable verbose execution output"
     )
-    parser.add_argument("--debug", action="store_true", help="Display full tracebacks upon failure")
+    parser.add_argument("--debug", action="store_true", default=False, help="Display full tracebacks upon failure")
 
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
     # init
     subparsers.add_parser(
-        "init", help="Initialize user directories, configuration, and verify prerequisites"
+        "init",
+        parents=[common_parser],
+        help="Initialize user directories, configuration, and verify prerequisites",
     )
 
     # list
-    subparsers.add_parser("list", help="List all managed tools and their current status")
+    subparsers.add_parser("list", parents=[common_parser], help="List all managed tools and their current status")
 
     # check
     subparsers.add_parser(
-        "check", help="Run dependency and version compliance checks (Exit code 2 if unmet)"
+        "check",
+        parents=[common_parser],
+        help="Run dependency and version compliance checks (Exit code 2 if unmet)",
     )
 
     # config
     config_parser = subparsers.add_parser(
-        "config", help="Manage configuration settings (e.g. esim_path)"
+        "config", parents=[common_parser], help="Manage configuration settings (e.g. esim_path)"
     )
     config_sub = config_parser.add_subparsers(dest="config_action")
-    config_get = config_sub.add_parser("get", help="Get a configuration value")
+    config_get = config_sub.add_parser("get", parents=[common_parser], help="Get a configuration value")
     config_get.add_argument("key", help="Key name to inspect")
-    config_set = config_sub.add_parser("set", help="Set a configuration value")
+    config_set = config_sub.add_parser("set", parents=[common_parser], help="Set a configuration value")
     config_set.add_argument("key", help="Key name to update (e.g. esim_path)")
     config_set.add_argument("value", help="Value to set")
-    config_sub.add_parser("show", help="Show full configuration")
+    config_sub.add_parser("show", parents=[common_parser], help="Show full configuration")
 
-    # install (Placeholder/Stub dispatched in M2)
-    install_parser = subparsers.add_parser("install", help="Install a tool or all tools")
+    # install
+    install_parser = subparsers.add_parser("install", parents=[common_parser], help="Install a tool or all tools")
     install_parser.add_argument(
         "tool", help="Tool name ('ngspice', 'kicad', 'python', 'git') or 'all'"
     )
     install_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
 
-    # update (Placeholder/Stub dispatched in M3)
+    # update
     update_parser = subparsers.add_parser(
-        "update", help="Update tools or check for available updates"
+        "update", parents=[common_parser], help="Update tools or check for available updates"
     )
     update_parser.add_argument("target", help="Tool name or 'check' or 'all'")
     update_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
 
-    # rollback (Placeholder/Stub dispatched in M3)
+    # rollback
     rollback_parser = subparsers.add_parser(
-        "rollback", help="Roll back a tool to its previously recorded version"
+        "rollback", parents=[common_parser], help="Roll back a tool to its previously recorded version"
     )
     rollback_parser.add_argument("tool", help="Tool name to roll back")
 
-    # configure (Placeholder/Stub dispatched in M4)
+    # configure
     configure_parser = subparsers.add_parser(
-        "configure", help="Configure PATH and eSim configuration file"
+        "configure", parents=[common_parser], help="Configure PATH and eSim configuration file"
     )
     configure_parser.add_argument(
         "--revert", action="store_true", help="Revert all configuration changes"
@@ -284,25 +353,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--yes", "-y", action="store_true", help="Skip confirmation prompt"
     )
 
-    # doctor (Placeholder/Stub dispatched in M5)
-    subparsers.add_parser("doctor", help="Run comprehensive system health checks")
+    # doctor
+    subparsers.add_parser("doctor", parents=[common_parser], help="Run comprehensive system health checks")
 
-    # cache (Placeholder/Stub dispatched in M5)
-    cache_parser = subparsers.add_parser("cache", help="Manage installer download cache")
+    # cache
+    cache_parser = subparsers.add_parser("cache", parents=[common_parser], help="Manage installer download cache")
     cache_sub = cache_parser.add_subparsers(dest="cache_action")
-    cache_sub.add_parser("list", help="List cached installers")
-    cache_sub.add_parser("clear", help="Clear cached installers")
+    cache_sub.add_parser("list", parents=[common_parser], help="List cached installers")
+    cache_sub.add_parser("clear", parents=[common_parser], help="Clear cached installers")
 
-    # logs (Placeholder/Stub dispatched in M5)
-    logs_parser = subparsers.add_parser("logs", help="Display recent action logs")
+    # logs
+    logs_parser = subparsers.add_parser("logs", parents=[common_parser], help="Display recent action logs")
     logs_parser.add_argument("--tail", type=int, default=30, help="Number of log entries to show")
 
-    # report (Placeholder/Stub dispatched in M5)
-    report_parser = subparsers.add_parser("report", help="Export system status report as Markdown")
+    # report
+    report_parser = subparsers.add_parser(
+        "report", parents=[common_parser], help="Export system status report as Markdown"
+    )
     report_parser.add_argument("--output", "-o", help="Target output file path")
 
     # version
-    subparsers.add_parser("version", help="Print eSim Tool Manager version")
+    subparsers.add_parser("version", parents=[common_parser], help="Print eSim Tool Manager version")
 
     return parser
 
@@ -327,6 +398,7 @@ def main(argv: list[str] | None = None) -> int:
         registry = ToolRegistry()
         detector = ToolDetector(registry=registry, config=config_mgr)
         dep_checker = DependencyChecker(registry=registry, detector=detector)
+        installer = ToolInstaller(registry=registry, detector=detector, config_mgr=config_mgr)
 
         if args.command == "init":
             return cmd_init(args, config_mgr)
@@ -334,6 +406,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_list(args, detector)
         elif args.command == "check":
             return cmd_check(args, detector, dep_checker)
+        elif args.command == "install":
+            return cmd_install(args, installer)
         elif args.command == "config":
             return cmd_config(args, config_mgr)
         else:

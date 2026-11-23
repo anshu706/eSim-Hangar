@@ -33,6 +33,15 @@ class DependencyChecker:
     ) -> DependencyCheckResult:
         """Check all declared prerequisites for a given tool."""
         spec = self.registry.get_tool(tool_name)
+        if not spec.dependencies:
+            return DependencyCheckResult(
+                tool=tool_name,
+                is_valid=True,
+                missing_dependencies=[],
+                incompatible_dependencies=[],
+                details=[],
+            )
+
         statuses = cached_statuses or self.detector.detect_all()
 
         missing: list[str] = []
