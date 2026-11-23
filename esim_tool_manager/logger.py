@@ -1,17 +1,17 @@
 """Rotating action log implementation for eSim Tool Manager."""
 
-from datetime import datetime, timezone
 import json
 import logging
-from logging.handlers import RotatingFileHandler
 import os
+from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 MAX_LOG_BYTES = 1024 * 1024  # 1 MB
 BACKUP_COUNT = 5
 
-_LOGGER: Optional[logging.Logger] = None
+_LOGGER: logging.Logger | None = None
 
 
 def get_default_log_dir() -> Path:
@@ -25,7 +25,7 @@ def get_default_log_dir() -> Path:
     return log_dir
 
 
-def setup_logger(log_dir: Optional[Path] = None, debug_mode: bool = False) -> logging.Logger:
+def setup_logger(log_dir: Path | None = None, debug_mode: bool = False) -> logging.Logger:
     """Configure and return the rotating action logger."""
     global _LOGGER
     target_dir = log_dir or get_default_log_dir()
@@ -56,16 +56,16 @@ def setup_logger(log_dir: Optional[Path] = None, debug_mode: bool = False) -> lo
 
 def log_action(
     command: str,
-    tool: Optional[str] = None,
+    tool: str | None = None,
     action: str = "",
     result: str = "SUCCESS",
-    details: Optional[str] = None,
-    log_dir: Optional[Path] = None,
+    details: str | None = None,
+    log_dir: Path | None = None,
 ) -> None:
     """Record a structured action entry in the rotating log file."""
     logger = _LOGGER or setup_logger(log_dir=log_dir)
     timestamp = datetime.now(timezone.utc).isoformat()
-    
+
     # Strip potential sensitive patterns if any
     safe_details = details or ""
     for secret_key in ["token", "password", "apikey", "secret"]:
@@ -87,7 +87,7 @@ def log_action(
         logger.error(log_msg)
 
 
-def read_logs(tail: int = 50, log_dir: Optional[Path] = None) -> list[dict[str, Any]]:
+def read_logs(tail: int = 50, log_dir: Path | None = None) -> list[dict[str, Any]]:
     """Read and parse the most recent log entries."""
     target_dir = log_dir or get_default_log_dir()
     log_file = target_dir / "actions.log"

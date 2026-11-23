@@ -2,9 +2,9 @@
 
 import json
 import os
-from pathlib import Path
 import tempfile
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any
 
 from esim_tool_manager.errors import ConfigError, ValidationError
 from esim_tool_manager.validators import validate_safe_path
@@ -25,7 +25,7 @@ def get_base_data_dir() -> Path:
 class ConfigManager:
     """Handles reading, writing, and validating user configuration."""
 
-    def __init__(self, config_dir: Optional[Path] = None):
+    def __init__(self, config_dir: Path | None = None):
         self.base_dir = (config_dir or get_base_data_dir()).resolve()
         self.config_path = self.base_dir / "config.json"
         self.cache_dir = self.base_dir / "cache"
@@ -35,7 +35,13 @@ class ConfigManager:
 
     def initialize_directories(self) -> None:
         """Create standard data, cache, state, and log directories."""
-        for directory in [self.base_dir, self.cache_dir, self.tools_dir, self.state_dir, self.logs_dir]:
+        for directory in [
+            self.base_dir,
+            self.cache_dir,
+            self.tools_dir,
+            self.state_dir,
+            self.logs_dir,
+        ]:
             directory.mkdir(parents=True, exist_ok=True)
         if not self.config_path.exists():
             self.save_config(self.get_default_config())
@@ -90,7 +96,9 @@ class ConfigManager:
         self.base_dir.mkdir(parents=True, exist_ok=True)
         temp_file = None
         try:
-            with tempfile.NamedTemporaryFile("w", dir=str(self.base_dir), delete=False, encoding="utf-8") as tf:
+            with tempfile.NamedTemporaryFile(
+                "w", dir=str(self.base_dir), delete=False, encoding="utf-8"
+            ) as tf:
                 temp_file = tf.name
                 json.dump(config_data, tf, indent=2)
             os.replace(temp_file, str(self.config_path))

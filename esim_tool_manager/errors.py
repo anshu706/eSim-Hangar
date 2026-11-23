@@ -1,12 +1,10 @@
 """Custom exceptions for eSim Automated Tool Manager."""
 
-from typing import Optional
-
 
 class EsimToolManagerError(Exception):
     """Base exception for all esim-tool-manager errors."""
 
-    def __init__(self, message: str, fix_suggestion: Optional[str] = None):
+    def __init__(self, message: str, fix_suggestion: str | None = None):
         super().__init__(message)
         self.message = message
         self.fix_suggestion = fix_suggestion

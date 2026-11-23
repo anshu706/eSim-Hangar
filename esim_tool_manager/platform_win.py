@@ -2,12 +2,11 @@
 
 import ctypes
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import Optional
 import winreg
+from pathlib import Path
 
 from esim_tool_manager.errors import PlatformError
 
@@ -27,7 +26,7 @@ def is_admin() -> bool:
         return False
 
 
-def get_winget_path() -> Optional[str]:
+def get_winget_path() -> str | None:
     """Find the path to the winget executable."""
     return shutil.which("winget.exe") or shutil.which("winget")
 
@@ -50,6 +49,7 @@ def check_winget_installed() -> str:
             text=True,
             timeout=10,
             check=False,
+            stdin=subprocess.DEVNULL,
         )
         if proc.returncode != 0:
             raise PlatformError(
@@ -79,6 +79,7 @@ def check_git_installed() -> str:
             text=True,
             timeout=10,
             check=False,
+            stdin=subprocess.DEVNULL,
         )
         return proc.stdout.strip()
     except subprocess.SubprocessError as exc:
@@ -93,7 +94,7 @@ def get_user_path() -> list[str]:
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ) as key:
             try:
-                val, reg_type = winreg.QueryValueEx(key, "Path")
+                val, _reg_type = winreg.QueryValueEx(key, "Path")
                 return [p.strip() for p in val.split(";") if p.strip()]
             except FileNotFoundError:
                 return []
@@ -164,6 +165,7 @@ def run_command_safe(cmd: list[str], timeout: int = 60) -> subprocess.CompletedP
             timeout=timeout,
             shell=False,
             check=False,
+            stdin=subprocess.DEVNULL,
         )
     except subprocess.TimeoutExpired as exc:
         raise PlatformError(

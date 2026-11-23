@@ -1,12 +1,11 @@
 """Registry parser and tool definitions for eSim Tool Manager."""
 
 from dataclasses import dataclass, field
-import os
 from pathlib import Path
-from typing import Any, Optional
+
 import yaml
 
-from esim_tool_manager.errors import RegistryError, ValidationError
+from esim_tool_manager.errors import RegistryError
 from esim_tool_manager.validators import (
     validate_download_url,
     validate_sha256,
@@ -20,12 +19,12 @@ class InstallSpec:
     """Specification for tool installation on Windows."""
 
     method: str  # "winget" or "direct_download"
-    package_id: Optional[str] = None
-    url: Optional[str] = None
-    sha256: Optional[str] = None
-    extract_folder: Optional[str] = None
-    bin_subdir: Optional[str] = None
-    fallback_url: Optional[str] = None
+    package_id: str | None = None
+    url: str | None = None
+    sha256: str | None = None
+    extract_folder: str | None = None
+    bin_subdir: str | None = None
+    fallback_url: str | None = None
 
 
 @dataclass
@@ -47,7 +46,7 @@ class ToolSpec:
 class ToolRegistry:
     """Loads, validates, and indexes tool specifications from tools.yaml."""
 
-    def __init__(self, yaml_path: Optional[Path] = None):
+    def __init__(self, yaml_path: Path | None = None):
         self.yaml_path = yaml_path or self.find_default_tools_yaml()
         self._tools: dict[str, ToolSpec] = {}
         self.load()
@@ -104,7 +103,9 @@ class ToolRegistry:
                 raise RegistryError(f"Tool '{tool_name}' is missing required 'binary' field.")
 
             version_cmd = raw_spec.get("version_command", [binary, "--version"])
-            if not isinstance(version_cmd, list) or not all(isinstance(c, str) for c in version_cmd):
+            if not isinstance(version_cmd, list) or not all(
+                isinstance(c, str) for c in version_cmd
+            ):
                 raise RegistryError(f"version_command for '{tool_name}' must be a list of strings.")
 
             version_pattern = str(raw_spec.get("version_pattern", r"([0-9]+\.[0-9]+(\.[0-9]+)?)"))
@@ -127,16 +128,24 @@ class ToolRegistry:
 
             if method == "winget":
                 if not package_id:
-                    raise RegistryError(f"Tool '{tool_name}' with winget method requires 'package_id'.")
+                    raise RegistryError(
+                        f"Tool '{tool_name}' with winget method requires 'package_id'."
+                    )
             elif method == "direct_download":
                 if not url:
-                    raise RegistryError(f"Tool '{tool_name}' direct_download method requires 'url'.")
+                    raise RegistryError(
+                        f"Tool '{tool_name}' direct_download method requires 'url'."
+                    )
                 validate_download_url(url)
                 if not sha256:
-                    raise RegistryError(f"Tool '{tool_name}' direct_download method requires 'sha256'.")
+                    raise RegistryError(
+                        f"Tool '{tool_name}' direct_download method requires 'sha256'."
+                    )
                 sha256 = validate_sha256(sha256)
             else:
-                raise RegistryError(f"Tool '{tool_name}' has unsupported install method '{method}'.")
+                raise RegistryError(
+                    f"Tool '{tool_name}' has unsupported install method '{method}'."
+                )
 
             if fallback_url:
                 validate_download_url(fallback_url)

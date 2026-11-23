@@ -1,8 +1,7 @@
 """Input validation and security controls for eSim Tool Manager."""
 
-import os
-from pathlib import Path
 import re
+from pathlib import Path
 from urllib.parse import urlparse
 
 from packaging.version import InvalidVersion, Version
@@ -40,7 +39,7 @@ def validate_version_string(version_str: str) -> str:
     """Validate that a version string is safe, well-formed, and parses with packaging.version."""
     if not isinstance(version_str, str) or not version_str.strip():
         raise ValidationError("Version string cannot be empty.")
-    
+
     clean_version = version_str.strip()
     if not VERSION_PATTERN.match(clean_version):
         raise ValidationError(
@@ -75,8 +74,7 @@ def validate_download_url(url: str) -> str:
 
     # Match exact domain or allowed subdomains
     domain_allowed = any(
-        hostname == domain or hostname.endswith("." + domain)
-        for domain in ALLOWED_URL_DOMAINS
+        hostname == domain or hostname.endswith("." + domain) for domain in ALLOWED_URL_DOMAINS
     )
     if not domain_allowed:
         raise ValidationError(
