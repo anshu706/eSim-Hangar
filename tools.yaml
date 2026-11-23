@@ -1,0 +1,66 @@
+version: "1.0"
+tools:
+  python:
+    name: "python"
+    display_name: "Python"
+    description: "Python runtime environment required by eSim and scripts"
+    binary: "python.exe"
+    version_command: ["python", "--version"]
+    version_pattern: "Python ([0-9]+\\.[0-9]+(\\.[0-9]+)?)"
+    minimum_version: "3.10.0"
+    pinned_version: "3.11.9"
+    install:
+      windows:
+        method: "winget"
+        package_id: "Python.Python.3.11"
+        fallback_url: "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
+        sha256: "0c7d42cf3896fa55b8be354be34cb94cb0ea8211dbf5a0fb7042cbab86e24bcf"
+    dependencies: []
+
+  git:
+    name: "git"
+    display_name: "Git"
+    description: "Distributed version control system for eSim repository checkouts"
+    binary: "git.exe"
+    version_command: ["git", "--version"]
+    version_pattern: "git version ([0-9]+\\.[0-9]+(\\.[0-9]+)?)"
+    minimum_version: "2.30.0"
+    pinned_version: "2.56.1"
+    install:
+      windows:
+        method: "winget"
+        package_id: "Git.Git"
+    dependencies: []
+
+  ngspice:
+    name: "ngspice"
+    display_name: "Ngspice"
+    description: "Circuit simulation engine used by eSim for analog and mixed-signal simulations"
+    binary: "ngspice.exe"
+    version_command: ["ngspice", "--version"]
+    version_pattern: "ngspice-([0-9]+(\\.[0-9]+)?)"
+    minimum_version: "34.0"
+    pinned_version: "43.0"
+    install:
+      windows:
+        method: "direct_download"
+        url: "https://downloads.sourceforge.net/project/ngspice/ng-spice-rework/43/ngspice-43_64.7z"
+        sha256: "fc3d4d418499c9b807f0f3032c55537d628d03d86c3f2a742735487497ecb5c0"
+        extract_folder: "Spice64"
+        bin_subdir: "bin"
+    dependencies: []
+
+  kicad:
+    name: "kicad"
+    display_name: "KiCad"
+    description: "Schematic capture and PCB layout suite used by eSim"
+    binary: "kicad.exe"
+    version_command: ["kicad-cli", "version"]
+    version_pattern: "([0-9]+\\.[0-9]+(\\.[0-9]+)?)"
+    minimum_version: "7.0.0"
+    pinned_version: "10.0.8"
+    install:
+      windows:
+        method: "winget"
+        package_id: "KiCad.KiCad"
+    dependencies: ["python"]
