@@ -35,20 +35,23 @@ def setup_logger(log_dir: Path | None = None, debug_mode: bool = False) -> loggi
     logger = logging.getLogger("esim_tool_manager")
     logger.setLevel(logging.DEBUG if debug_mode else logging.INFO)
 
-    # Avoid duplicate handlers if setup is called multiple times
-    if not logger.handlers:
-        handler = RotatingFileHandler(
-            filename=str(log_file),
-            maxBytes=MAX_LOG_BYTES,
-            backupCount=BACKUP_COUNT,
-            encoding="utf-8",
-        )
-        formatter = logging.Formatter(
-            fmt="%(asctime)s [%(levelname)s] %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+    # Recreate handler if log_dir changed or no handlers present
+    for h in list(logger.handlers):
+        logger.removeHandler(h)
+        h.close()
+
+    handler = RotatingFileHandler(
+        filename=str(log_file),
+        maxBytes=MAX_LOG_BYTES,
+        backupCount=BACKUP_COUNT,
+        encoding="utf-8",
+    )
+    formatter = logging.Formatter(
+        fmt="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
     _LOGGER = logger
     return logger

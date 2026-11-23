@@ -3,6 +3,7 @@
 import argparse
 import sys
 import traceback
+from pathlib import Path
 
 try:
     from rich.console import Console
@@ -20,15 +21,18 @@ from esim_tool_manager.config import ConfigManager
 from esim_tool_manager.configurator import ToolConfigurator
 from esim_tool_manager.deps import DependencyChecker
 from esim_tool_manager.detector import ToolDetector
+from esim_tool_manager.doctor import SystemDoctor
+from esim_tool_manager.downloader import Downloader
 from esim_tool_manager.errors import (
     ConfigError,
     EsimToolManagerError,
     PlatformError,
 )
 from esim_tool_manager.installer import ToolInstaller
-from esim_tool_manager.logger import log_action, setup_logger
+from esim_tool_manager.logger import log_action, read_logs, setup_logger
 from esim_tool_manager.platform_win import check_git_installed, check_winget_installed
 from esim_tool_manager.registry import ToolRegistry
+from esim_tool_manager.report import ReportGenerator
 from esim_tool_manager.updater import ToolUpdater
 
 
@@ -440,6 +444,169 @@ def cmd_configure(args: argparse.Namespace, configurator: ToolConfigurator) -> i
     return 1
 
 
+def cmd_doctor(args: argparse.Namespace, doctor: SystemDoctor) -> int:
+    """Run full system health and diagnostic checks."""
+    print_info("Executing comprehensive diagnostic battery...")
+    checks = doctor.run_all_checks()
+
+    has_failures = any(c.status == "FAIL" for c in checks)
+
+    if HAVE_RICH and console:
+        table = Table(
+            title="eSim System Doctor Diagnostics", show_header=True, header_style="bold cyan"
+        )
+        table.add_column("Category", style="dim", width=14)
+        table.add_column("Check", width=22)
+        table.add_column("Status", width=10)
+        table.add_column("Details", width=36)
+        table.add_column("Suggested Fix", style="yellow")
+
+        for c in checks:
+            status_style = (
+                "green" if c.status == "PASS" else ("yellow" if c.status == "WARN" else "bold red")
+            )
+            table.add_row(
+                c.category,
+                c.name,
+                f"[{status_style}]{c.status}[/{status_style}]",
+                c.message,
+                c.fix_suggestion or "",
+            )
+        console.print(table)
+    else:
+        for c in checks:
+            print(f"[{c.status}] {c.category} - {c.name}: {c.message}")
+            if c.fix_suggestion:
+                print(f"       Fix: {c.fix_suggestion}")
+
+    result_str = "FAILED" if has_failures else "SUCCESS"
+    log_action("doctor", action="run_checks", result=result_str)
+
+    if has_failures:
+        print_warning("\nOne or more diagnostic checks reported issues requiring remediation.")
+        return 1
+
+    print_success("\nAll core diagnostic checks passed successfully.")
+    return 0
+
+
+def cmd_cache(args: argparse.Namespace, downloader: Downloader) -> int:
+    """Manage local installer downloads cache."""
+    action = args.cache_action or "list"
+
+    if action == "list":
+        items = downloader.list_cached_files()
+        if not items:
+            print_info(f"Installer cache is empty ({downloader.cache_dir}).")
+            return 0
+
+        if HAVE_RICH and console:
+            table = Table(
+                title="eSim Cached Installer Files", show_header=True, header_style="bold blue"
+            )
+            table.add_column("File", style="cyan", width=30)
+            table.add_column("Size (MB)", width=12)
+            table.add_column("Local Path", style="dim")
+
+            for item in items:
+                table.add_row(item["filename"], str(item["size_mb"]), item["path"])
+            console.print(table)
+        else:
+            for item in items:
+                print(f"{item['filename']:<30} {item['size_mb']} MB   {item['path']}")
+        return 0
+
+    elif action == "clear":
+        if not args.yes and not args.dry_run:
+            try:
+                choice = (
+                    input("Are you sure you want to clear all cached installers? [y/N]: ")
+                    .strip()
+                    .lower()
+                )
+            except (EOFError, KeyboardInterrupt, OSError):
+                print_warning("\nOperation cancelled.")
+                return 3
+            if choice not in ("y", "yes"):
+                print_warning("Operation cancelled.")
+                return 3
+
+        if args.dry_run:
+            items = downloader.list_cached_files()
+            print_info(
+                f"[DRY RUN] Would delete {len(items)} cached files from {downloader.cache_dir}."
+            )
+            return 0
+
+        count = downloader.clear_cache()
+        print_success(f"Successfully cleared {count} cached installer file(s).")
+        log_action("cache", action="clear", result="SUCCESS", details=f"Cleared {count} files")
+        return 0
+
+    return 0
+
+
+def cmd_logs(args: argparse.Namespace, config_mgr: ConfigManager) -> int:
+    """Display recent structured action log entries."""
+    tail = getattr(args, "tail", 30) or 30
+    entries = read_logs(tail=tail, log_dir=config_mgr.logs_dir)
+    if not entries:
+        print_info("No action log entries found.")
+        return 0
+
+    if HAVE_RICH and console:
+        table = Table(
+            title=f"Recent Action Log (Last {len(entries)} events)",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        table.add_column("Timestamp (UTC)", width=20, style="dim")
+        table.add_column("Command", width=12, style="cyan")
+        table.add_column("Tool", width=10)
+        table.add_column("Action", width=18)
+        table.add_column("Result", width=10)
+        table.add_column("Details", style="dim")
+
+        for entry in entries:
+            if "raw" in entry:
+                table.add_row("-", "-", "-", "raw", "-", entry["raw"][:60])
+            else:
+                res = entry.get("result", "")
+                res_style = (
+                    "green" if res == "SUCCESS" else ("yellow" if res == "CANCELLED" else "red")
+                )
+                table.add_row(
+                    entry.get("timestamp", "")[:19],
+                    entry.get("command", ""),
+                    entry.get("tool", ""),
+                    entry.get("action", ""),
+                    f"[{res_style}]{res}[/{res_style}]",
+                    entry.get("details", "")[:60],
+                )
+        console.print(table)
+    else:
+        for entry in entries:
+            if "raw" in entry:
+                print(entry["raw"])
+            else:
+                ts = entry.get("timestamp", "")[:19]
+                print(
+                    f"{ts} | {entry.get('command'):<8} | {entry.get('action'):<15} | {entry.get('result'):<10} | {entry.get('details')}"
+                )
+
+    return 0
+
+
+def cmd_report(args: argparse.Namespace, report_gen: ReportGenerator) -> int:
+    """Generate and export a Markdown status report."""
+    target_path = Path(args.output) if args.output else Path.cwd() / "esim_tool_manager_report.md"
+    print_info(f"Generating system audit report to: {target_path} ...")
+    out_file = report_gen.write_report(target_path)
+    print_success(f"Audit report exported successfully to: {out_file}")
+    log_action("report", action="export", result="SUCCESS", details=str(out_file))
+    return 0
+
+
 def cmd_config(args: argparse.Namespace, config_mgr: ConfigManager) -> int:
     """Get or set user configuration values."""
     if args.config_action == "get":
@@ -591,7 +758,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cache_sub = cache_parser.add_subparsers(dest="cache_action")
     cache_sub.add_parser("list", parents=[common_parser], help="List cached installers")
-    cache_sub.add_parser("clear", parents=[common_parser], help="Clear cached installers")
+    cache_clear = cache_sub.add_parser("clear", parents=[common_parser], help="Clear cached installers")
+    cache_clear.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
 
     # logs
     logs_parser = subparsers.add_parser(
@@ -645,6 +813,18 @@ def main(argv: list[str] | None = None) -> int:
             detector=detector,
             config_mgr=config_mgr,
         )
+        doctor = SystemDoctor(
+            registry=registry,
+            detector=detector,
+            dep_checker=dep_checker,
+            config_mgr=config_mgr,
+        )
+        downloader = Downloader(config_mgr=config_mgr)
+        report_gen = ReportGenerator(
+            registry=registry,
+            detector=detector,
+            config_mgr=config_mgr,
+        )
 
         if args.command == "init":
             return cmd_init(args, config_mgr)
@@ -660,6 +840,14 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_rollback(args, updater)
         elif args.command == "configure":
             return cmd_configure(args, configurator)
+        elif args.command == "doctor":
+            return cmd_doctor(args, doctor)
+        elif args.command == "cache":
+            return cmd_cache(args, downloader)
+        elif args.command == "logs":
+            return cmd_logs(args, config_mgr)
+        elif args.command == "report":
+            return cmd_report(args, report_gen)
         elif args.command == "config":
             return cmd_config(args, config_mgr)
         else:
