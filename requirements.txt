@@ -2,7 +2,6 @@ PyYAML==6.0.3
 rich==15.0.0
 packaging==26.0
 requests==2.34.2
-filelock==4.2.1
 pytest==9.1.1
 pytest-cov==7.1.0
 ruff==0.17.6
