@@ -21,7 +21,7 @@ def is_admin() -> bool:
     if not is_windows():
         return False
     try:
-        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        return bool(ctypes.windll.shell32.IsUserAnAdmin() != 0)
     except (AttributeError, OSError):
         return False
 

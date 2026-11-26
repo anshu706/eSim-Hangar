@@ -758,7 +758,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cache_sub = cache_parser.add_subparsers(dest="cache_action")
     cache_sub.add_parser("list", parents=[common_parser], help="List cached installers")
-    cache_clear = cache_sub.add_parser("clear", parents=[common_parser], help="Clear cached installers")
+    cache_clear = cache_sub.add_parser(
+        "clear", parents=[common_parser], help="Clear cached installers"
+    )
     cache_clear.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
 
     # logs
