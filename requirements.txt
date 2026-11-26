@@ -4,6 +4,7 @@ packaging==26.0
 requests==2.34.2
 pytest==9.1.1
 pytest-cov==7.1.0
+filelock==4.2.1
 ruff==0.17.6
 black==26.10.1
 mypy==2.4.1
